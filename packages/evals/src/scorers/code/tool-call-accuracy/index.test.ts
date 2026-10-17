@@ -3,6 +3,39 @@ import { createAgentTestRun, createTestMessage, createToolInvocation } from '../
 import { createToolCallAccuracyScorerCode } from './index';
 
 describe('createToolCallAccuracyScorerCode', () => {
+  test.each([
+    { expected: ['search', 'search'], actual: ['search', 'search'], score: 1 },
+    { expected: ['search', 'inspect', 'search'], actual: ['search', 'inspect', 'search'], score: 1 },
+    { expected: ['search', 'search'], actual: ['log', 'search', 'inspect', 'search', 'log'], score: 1 },
+    {
+      expected: ['search', 'inspect', 'search', 'inspect'],
+      actual: ['search', 'inspect', 'search', 'inspect'],
+      score: 1,
+    },
+    { expected: ['search', 'search'], actual: ['search'], score: 0 },
+    { expected: ['search', 'search', 'search'], actual: ['search', 'search'], score: 0 },
+    { expected: ['search', 'inspect', 'search'], actual: ['search', 'search', 'inspect'], score: 0 },
+  ])('scores repeated expected tools $expected against $actual as $score', async ({ expected, actual, score }) => {
+    const scorer = createToolCallAccuracyScorerCode({ expectedToolOrder: expected, strictMode: false });
+    const inputMessages = [createTestMessage({ content: 'Run the expected tools', role: 'user', id: 'input-1' })];
+    const output = [
+      createTestMessage({
+        content: 'Running the tools',
+        role: 'assistant',
+        id: 'output-1',
+        toolInvocations: actual.map((toolName, index) =>
+          createToolInvocation({ toolCallId: `call-${index}`, toolName, args: {}, result: {}, state: 'result' }),
+        ),
+      }),
+    ];
+
+    const result = await scorer.run(createAgentTestRun({ inputMessages, output }));
+
+    expect(result.preprocessStepResult?.actualTools).toEqual(actual);
+    expect(result.preprocessStepResult?.correctOrderCalled).toBe(score === 1);
+    expect(result.score).toBe(score);
+  });
+
   test('should return 1 when the expected tool is called', async () => {
     const scorer = createToolCallAccuracyScorerCode({ expectedTool: 'weather-tool' });
 
